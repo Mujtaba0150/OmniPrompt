@@ -9,6 +9,7 @@ import androidx.core.content.edit
 import com.mrndstvndv.search.BuildConfig
 import com.mrndstvndv.search.R
 import com.mrndstvndv.search.util.GitHubUpdateChecker
+import com.mrndstvndv.search.util.VersionComparator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -547,6 +548,8 @@ class SettingsRepository(
 
     private fun loadLatestUpdate(): GitHubUpdateChecker.UpdateResult? {
         val version = preferences.getString(KEY_LATEST_UPDATE_VERSION, null) ?: return null
+        // The saved result can predate the installed version, since checks only run on an interval.
+        if (!VersionComparator.isNewer(BuildConfig.VERSION_NAME, version)) return null
         val changelog = preferences.getString(KEY_LATEST_UPDATE_CHANGELOG, "") ?: ""
         val downloadUrl = preferences.getString(KEY_LATEST_UPDATE_DOWNLOAD_URL, "") ?: ""
         val isPrerelease = preferences.getBoolean(KEY_LATEST_UPDATE_PRERELEASE, false)
