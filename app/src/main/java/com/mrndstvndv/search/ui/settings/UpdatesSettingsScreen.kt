@@ -53,6 +53,7 @@ import com.mrndstvndv.search.ui.components.settings.SettingsNavigationRow
 import com.mrndstvndv.search.ui.components.settings.SettingsSingleChoiceSegmentedButtons
 import com.mrndstvndv.search.ui.components.settings.SettingsSliderRow
 import com.mrndstvndv.search.ui.components.settings.SettingsSwitch
+import com.mrndstvndv.search.ui.debug.DebugUpdatePromptsEntry
 import com.mrndstvndv.search.util.GitHubUpdateChecker
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -69,6 +70,7 @@ fun UpdatesSettingsScreen(
     val customUpdateIntervalDays by settingsRepository.customUpdateIntervalDays.collectAsState()
     val latestUpdate by settingsRepository.latestUpdate.collectAsState()
     val checkPrereleaseBuilds by settingsRepository.checkPrereleaseBuilds.collectAsState()
+    val updatePromptsDisabled by settingsRepository.updatePromptsDisabled.collectAsState()
 
     var isChecking by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<GitHubUpdateChecker.UpdateResult?>(null) }
@@ -267,6 +269,13 @@ fun UpdatesSettingsScreen(
                     onCheckedChange = { settingsRepository.setCheckPrereleaseBuilds(it) },
                 )
             }
+        }
+
+        item {
+            DebugUpdatePromptsEntry(
+                disabled = updatePromptsDisabled,
+                onDisabledChange = settingsRepository::setUpdatePromptsDisabled,
+            )
         }
     }
 

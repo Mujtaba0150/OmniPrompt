@@ -122,7 +122,8 @@ fun GeneralSettingsScreen(
     val aboutSubtitle = stringResource(R.string.settings_about_subtitle)
 
     val latestUpdate by settingsRepository.latestUpdate.collectAsState()
-    val showBadge = latestUpdate != null
+    val updatePromptsDisabled by settingsRepository.updatePromptsDisabled.collectAsState()
+    val showBadge = latestUpdate != null && !updatePromptsDisabled
     val checkPrereleaseBuilds by settingsRepository.checkPrereleaseBuilds.collectAsState()
 
     LaunchedEffect(Unit) {

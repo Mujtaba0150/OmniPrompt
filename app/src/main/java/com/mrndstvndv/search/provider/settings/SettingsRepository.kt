@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import androidx.annotation.StringRes
 import androidx.core.content.edit
+import com.mrndstvndv.search.BuildConfig
 import com.mrndstvndv.search.R
 import com.mrndstvndv.search.util.GitHubUpdateChecker
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +59,7 @@ class SettingsRepository(
         private const val KEY_LATEST_UPDATE_DOWNLOAD_URL = "latest_update_download_url"
         private const val KEY_LATEST_UPDATE_PRERELEASE = "latest_update_prerelease"
         private const val KEY_CHECK_PRERELEASE_BUILDS = "check_prerelease_builds"
+        private const val KEY_UPDATE_PROMPTS_DISABLED = "debug_update_prompts_disabled"
 
         private const val DEFAULT_BACKGROUND_OPACITY = 0.5f
         private const val DEFAULT_SEARCH_BAR_TRANSPARENCY = 0.65f
@@ -168,6 +170,9 @@ class SettingsRepository(
 
     private val _checkPrereleaseBuilds = MutableStateFlow(loadCheckPrereleaseBuilds())
     val checkPrereleaseBuilds: StateFlow<Boolean> = _checkPrereleaseBuilds
+
+    private val _updatePromptsDisabled = MutableStateFlow(loadUpdatePromptsDisabled())
+    val updatePromptsDisabled: StateFlow<Boolean> = _updatePromptsDisabled
 
     private val _revealAnimationEnabled = MutableStateFlow(DEFAULT_REVEAL_ANIMATION_ENABLED)
     val revealAnimationEnabled: StateFlow<Boolean> = _revealAnimationEnabled
@@ -547,6 +552,15 @@ class SettingsRepository(
         val isPrerelease = preferences.getBoolean(KEY_LATEST_UPDATE_PRERELEASE, false)
         return GitHubUpdateChecker.UpdateResult(version, changelog, downloadUrl, isPrerelease)
     }
+
+    /** Debug builds only; release builds always read this as false. */
+    fun setUpdatePromptsDisabled(disabled: Boolean) {
+        preferences.edit { putBoolean(KEY_UPDATE_PROMPTS_DISABLED, disabled) }
+        _updatePromptsDisabled.value = loadUpdatePromptsDisabled()
+    }
+
+    private fun loadUpdatePromptsDisabled(): Boolean =
+        BuildConfig.DEBUG && preferences.getBoolean(KEY_UPDATE_PROMPTS_DISABLED, false)
 
     fun setCheckPrereleaseBuilds(enabled: Boolean) {
         preferences.edit {

@@ -410,6 +410,7 @@ class SearchActivity : ComponentActivity() {
             val dismissedVersion by settingsRepository.dismissedVersion.collectAsState()
             val latestUpdate by settingsRepository.latestUpdate.collectAsState()
             val checkPrereleaseBuilds by settingsRepository.checkPrereleaseBuilds.collectAsState()
+            val updatePromptsDisabled by settingsRepository.updatePromptsDisabled.collectAsState()
             val showEnterBadge = alwaysShowEnterBadge || !hasUsedEnter
 
             LaunchedEffect(launchTrigger) {
@@ -495,9 +496,9 @@ class SearchActivity : ComponentActivity() {
             var activeUpdateResult by remember { mutableStateOf<GitHubUpdateChecker.UpdateResult?>(null) }
             var showUpdateBanner by remember { mutableStateOf(false) }
 
-            LaunchedEffect(latestUpdate, dismissedVersion) {
+            LaunchedEffect(latestUpdate, dismissedVersion, updatePromptsDisabled) {
                 val update = latestUpdate
-                if (update != null && update.version != dismissedVersion) {
+                if (update != null && update.version != dismissedVersion && !updatePromptsDisabled) {
                     activeUpdateResult = update
                     showUpdateBanner = true
                 } else {
@@ -516,7 +517,7 @@ class SearchActivity : ComponentActivity() {
                         else -> 7 * 24 * 60 * 60 * 1000L
                     }
 
-                if (now - lastUpdateCheckTime >= intervalMillis) {
+                if (!updatePromptsDisabled && now - lastUpdateCheckTime >= intervalMillis) {
                     val result = GitHubUpdateChecker.checkForUpdates(BuildConfig.VERSION_NAME, checkPrereleaseBuilds)
                     if (result is GitHubUpdateChecker.CheckResult.NewUpdate) {
                         settingsRepository.setLastUpdateCheckTime(now)
