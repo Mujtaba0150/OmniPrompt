@@ -75,9 +75,9 @@ class AppContainer(val context: Context) {
             settingsRepository,
             systemSettingsSettingsRepo,
             developerSettingsManager,
+            rankingRepository,
             settingsCatalogRepository,
             applicationScope,
-            rankingRepository,
         )
     }
 

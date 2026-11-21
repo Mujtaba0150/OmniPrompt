@@ -159,6 +159,18 @@ class AppListRepository private constructor(
         launcherApps.registerCallback(launcherAppsCallback, android.os.Handler(android.os.Looper.getMainLooper()))
         context.registerComponentCallbacks(componentCallbacks)
 
+        // App theme (palette / light-dark / pure black) drives themed icon colors.
+        scope.launch {
+            var previous: com.mrndstvndv.search.provider.settings.ThemePreferences? = null
+            appearanceSettingsRepository.themePreferences.collectLatest { prefs ->
+                if (previous != null && previous != prefs) {
+                    cachedColors = null
+                    iconCache.clear()
+                }
+                previous = prefs
+            }
+        }
+
         // Watch theme settings to invalidate icon cache without full app list refresh.
         scope.launch {
             settingsRepository.flow.collectLatest { settings ->

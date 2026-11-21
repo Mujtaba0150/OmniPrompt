@@ -15,7 +15,6 @@ import com.mrndstvndv.search.provider.model.Query
 import com.mrndstvndv.search.provider.settings.SettingsRepository
 import com.mrndstvndv.search.provider.settings.ProviderSettingsRepository
 import com.mrndstvndv.search.provider.settings.SystemSettingsSettings
-import com.mrndstvndv.search.util.FuzzyMatchResult
 import com.mrndstvndv.search.util.FuzzyMatcher
 import com.mrndstvndv.search.util.TypoFallbackMatcher
 import kotlinx.coroutines.CoroutineScope
@@ -31,9 +30,9 @@ class SettingsProvider(
     private val globalSettingsRepository: SettingsRepository,
     private val settingsRepository: ProviderSettingsRepository<SystemSettingsSettings>,
     private val developerSettingsManager: DeveloperSettingsManager,
+    private val rankingRepository: ProviderRankingRepository,
     private val settingsCatalogRepository: SettingsCatalogRepository,
     private val scope: CoroutineScope,
-    private val rankingRepository: ProviderRankingRepository,
 ) : Provider {
     override val id: String = "system-settings"
     override val displayName: String = context.getString(R.string.provider_system_settings)
@@ -405,7 +404,7 @@ class SettingsProvider(
                 val matchResult = FuzzyMatcher.match(normalized, item.title)
                 if (matchResult != null) Pair(item, matchResult) else null
             }.sortedByDescending { it.second.score }
-                .map { (item, matchResult) -> buildHardcodedResult(item, matchResult) }
+                .map { (item, matchResult) -> buildHardcodedResult(item, matchResult.matchedIndices) }
 
         // Add manifest-discovered settings screens with their own label.
         val discoveredResults =
@@ -413,7 +412,7 @@ class SettingsProvider(
                 val matchResult = FuzzyMatcher.match(normalized, activity.label)
                 matchResult?.let { activity to it }
             }.sortedByDescending { it.second.score }
-                .map { (activity, matchResult) -> buildDiscoveredResult(activity, matchResult) }
+                .map { (activity, matchResult) -> buildDiscoveredResult(activity, matchResult.matchedIndices) }
 
         // A canonical-target dedup already collapses activity aliases in the
         // explorer, but distinct components can still end up with visually
@@ -429,65 +428,44 @@ class SettingsProvider(
         results.addAll(deduped.values)
 
         if (results.isEmpty()) {
-            results.addAll(buildTypoFallbackResults(normalized, eligibleHardcoded, settingsCatalog.labeledDiscovered))
+            // Nothing matched at all — try a typo-tolerant fallback over the
+            // same candidates (discovered first so they win ties, as above).
+            val fallbackCandidates =
+                settingsCatalog.labeledDiscovered.map { activity ->
+                    TypoFallbackCandidate(
+                        label = activity.label,
+                        resultId = "$id:${activity.componentName.flattenToString()}",
+                    ) { buildDiscoveredResult(activity, emptyList()) }
+                } +
+                    eligibleHardcoded.map { item ->
+                        TypoFallbackCandidate(
+                            label = item.title,
+                            resultId = "$id:${item.action}",
+                        ) { buildHardcodedResult(item, emptyList()) }
+                    }
+            results.addAll(
+                TypoFallbackMatcher.match(
+                    queryLower = normalized.lowercase(),
+                    candidates = fallbackCandidates,
+                    labelOf = { it.label.lowercase() },
+                    frequencyOf = { rankingRepository.getGlobalResultFrequency(it.resultId) },
+                ).distinctBy { it.item.label.trim().lowercase() }
+                    .map { it.item.build() },
+            )
         }
 
         return results
     }
 
-    /**
-     * Typo-tolerant fallback, invoked only when nothing else matched at all.
-     * Covers both hardcoded actions and manifest-discovered screens together
-     * so ordering (distance first, then usage frequency) is consistent
-     * across both sources rather than showing one source's fallback matches
-     * before the other's regardless of relevance.
-     */
-    private fun buildTypoFallbackResults(
-        normalized: String,
-        eligibleHardcoded: List<SettingsActionItem>,
-        labeledDiscovered: List<DiscoveredActivity>,
-    ): List<ProviderResult> {
-        val candidates: List<SettingsFallbackCandidate> =
-            eligibleHardcoded.map { SettingsFallbackCandidate.Hardcoded(it) } +
-                labeledDiscovered.map { SettingsFallbackCandidate.Discovered(it) }
-
-        val noHighlight = FuzzyMatchResult(score = 0, matchedIndices = emptyList())
-
-        return TypoFallbackMatcher.match(
-            queryLower = normalized.lowercase(),
-            candidates = candidates,
-            labelOf = { it.label.lowercase() },
-            frequencyOf = { candidate -> rankingRepository.getGlobalResultFrequency(frequencyIdFor(candidate)) },
-        ).map { match ->
-            when (val candidate = match.item) {
-                is SettingsFallbackCandidate.Hardcoded -> buildHardcodedResult(candidate.item, noHighlight)
-                is SettingsFallbackCandidate.Discovered -> buildDiscoveredResult(candidate.activity, noHighlight)
-            }
-        }
-    }
-
-    /** Must match the id format used for the real ProviderResult built for each candidate. */
-    private fun frequencyIdFor(candidate: SettingsFallbackCandidate): String =
-        when (candidate) {
-            is SettingsFallbackCandidate.Hardcoded -> "$id:${candidate.item.action}"
-            is SettingsFallbackCandidate.Discovered -> "$id:${candidate.activity.componentName.flattenToString()}"
-        }
-
-    private sealed class SettingsFallbackCandidate {
-        abstract val label: String
-
-        data class Hardcoded(val item: SettingsActionItem) : SettingsFallbackCandidate() {
-            override val label: String get() = item.title
-        }
-
-        data class Discovered(val activity: DiscoveredActivity) : SettingsFallbackCandidate() {
-            override val label: String get() = activity.label
-        }
-    }
+    private class TypoFallbackCandidate(
+        val label: String,
+        val resultId: String,
+        val build: () -> ProviderResult,
+    )
 
     private fun buildHardcodedResult(
         item: SettingsActionItem,
-        matchResult: FuzzyMatchResult,
+        matchedIndices: List<Int>,
     ): ProviderResult =
         ProviderResult(
             id = "$id:${item.action}",
@@ -522,12 +500,12 @@ class SettingsProvider(
                 }
             },
             keepOverlayUntilExit = true,
-            matchedTitleIndices = matchResult.matchedIndices,
+            matchedTitleIndices = matchedIndices,
         )
 
     private fun buildDiscoveredResult(
         activity: DiscoveredActivity,
-        matchResult: FuzzyMatchResult,
+        matchedIndices: List<Int>,
     ): ProviderResult =
         ProviderResult(
             id = "$id:${activity.componentName.flattenToString()}",
@@ -559,7 +537,7 @@ class SettingsProvider(
                 }
             },
             keepOverlayUntilExit = true,
-            matchedTitleIndices = matchResult.matchedIndices,
+            matchedTitleIndices = matchedIndices,
         )
 
     private fun openDevOptionsFallback() {
